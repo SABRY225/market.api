@@ -388,3 +388,14 @@ exports.get = async (req, res) => {
     return res.status(500).json({ message: 'Server error' });
   }
 };
+
+// allDelivery
+exports.allDelivery = async (req, res) => {
+  try {
+    const users = await User.findAll({where: {role: 'delivery'}, order: [['created_at', 'DESC']] });
+    return res.json(users);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};

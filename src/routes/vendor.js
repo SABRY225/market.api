@@ -11,9 +11,12 @@ router.get('/',authToken,controller.getVendorInfo);
 router.get('/statistics',authToken,controller.vendorStatistics);
 router.get('/overview/notifictions',authToken,controller.notifications);
 
+router.get('/delivery', controller.allDelivery);
+
 
 router.get('/all', controller.all);
 router.put('/status/:vendorId', controller.status);
 router.get('/:vendorId', controller.get);
+
 
 module.exports = router;

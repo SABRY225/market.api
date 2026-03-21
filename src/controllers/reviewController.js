@@ -90,3 +90,26 @@ exports.postReviewStatus = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+exports.addReview = async (req, res) => {
+  try {
+    const { menu_id, rating, comment } = req.body;
+    const user_id = req.user.id; // يتم جلبه من التوكن (Auth Middleware)
+
+    const newReview = await Review.create({
+      menu_id,
+      user_id,
+      rating,
+      comment
+    });
+
+    // جلب التقييم مرة أخرى مع بيانات المستخدم لإرجاعه للمتصفح فوراً
+    const fullReview = await Review.findByPk(newReview.id, {
+      include: [{ model: User, as: 'user', attributes: ['name'] }]
+    });
+
+    res.status(201).json({ data: fullReview });
+  } catch (error) {
+    res.status(500).json({ message: "فشل إضافة التقييم" });
+  }
+};

@@ -1,7 +1,7 @@
 const { validationResult } = require('express-validator');
-const { User, CartItem, Favorite, Review, Customer, Order , Vendor, Category, Menu, OrderItem } = require('../models');
+const { User, CartItem, Favorite, Review, Customer, Order , Vendor, Category, Menu, OrderItem, Payment } = require('../models');
 const bcrypt = require("bcryptjs");
-const { Sequelize, where } = require('sequelize');
+const { Sequelize, where, Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
 const { sendMail } = require('../utils/mailer');
 const codeStore = new Map();
@@ -60,6 +60,8 @@ exports.getUserInfo = async (req, res) => {
     const {id} = req.params;
     const user = await User.findByPk(id);
     const customer = await Customer.findOne({where:{user_id:id}});
+    const ordersCount = await Order.count({where:{user_id:id}});
+    const favoritesCount = await Favorite.count({where:{user_id:id}});
      return res.status(200).json({
       name:user.name,
       email:user.email,
@@ -70,27 +72,93 @@ exports.getUserInfo = async (req, res) => {
       createdAt:customer.createdAt,
       updatedAt:customer.updatedAt,
       isActive:customer.is_active,
+      ordersCount,
+      favoritesCount
      })
   } catch (error) {
     return res.status(500).json({ message: error.message });
     
   }
 };
+exports.updateUserData = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, address, city } = req.body;
+    // 1. البحث عن المستخدم والعميل للتأكد من وجودهم
+    const user = await User.findByPk(id);
+    const customer = await Customer.findOne({ where: { user_id: id } });
+
+    if (!user || !customer) {
+      return res.status(404).json({ message: "المستخدم غير موجود" });
+    }
+
+    // 2. تحديث جدول User (البيانات الأساسية)
+    await user.update({
+      name: name || user.name,
+      email: email || user.email
+    });
+
+    // 3. تحديث جدول Customer (البيانات الإضافية)
+    await customer.update({
+      phone: phone || customer.phone,
+      address: address || customer.address,
+      city: city || customer.city
+    });
+
+    // 4. إعادة البيانات المحدثة (اختياري) أو إرسال رسالة نجاح
+    return res.status(200).json({
+      message: "تم تحديث البيانات بنجاح",
+      updatedData: {
+        name: user.name,
+        email: user.email,
+        phone: customer.phone,
+        address: customer.address
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "حدث خطأ أثناء تحديث البيانات" });
+  }
+};
 
 exports.getUserOrders = async (req, res) => {
   try {
-    if (req.params.id) {
-          const {id} = req.params;
-    const User = await Order.findAll({where:{user_id:id}});
-     return res.status(200).json(User)
-    }else{
-    const User = await Order.findAll({where:{user_id:req.user.id}});
-     return res.status(200).json(User)
+    // 1. تحديد المعرف (إما من البارامتر أو من التوكن)
+    const userId = req.user.id;
+    
+    // 2. جلب حالة الطلب من Query Params (مثلاً: ?status=pending)
+    const { status } = req.query;
+    
+    // 3. بناء شرط البحث
+    const whereCondition = { user_id: userId };
+    if (status) {
+      whereCondition.status = status; // إضافة فلترة الحالة إذا وُجدت
     }
 
+    // 4. جلب الطلبات مع المنتجات التابعة لها
+    const orders = await Order.findAll({
+      where: whereCondition,
+      include: [
+        {
+          model: OrderItem, 
+          as: 'items',
+          include: [
+            {
+              model: Menu,
+              as: 'Menu',
+              attributes: ['id', 'name', 'deliveryTime'] // جلب وقت التحضير لكل وجبة
+            }
+          ]
+        }
+      ],
+      order: [['createdAt', 'DESC']] // جلب الأحدث أولاً
+    });
+
+    return res.status(200).json(orders);
+
   } catch (error) {
-    return res.status(500).json({ message: error.message });
-    
+    return res.status(500).json({ message: "حدث خطأ أثناء جلب الطلبات: " + error.message });
   }
 };
 
@@ -122,6 +190,7 @@ exports.login = async (req, res) => {
       include: [
         {
           model: Customer,
+          as: "customer",
           attributes: ["id", "phone", "city", "wallet_balance"],
         },
       ],
@@ -447,44 +516,52 @@ try {
 
 // cart
 exports.addToCart = async (req, res) => {
-  const userId = req.user.id;
-  const { product_id, quantity = 1 } = req.body;
-
   try {
-    const product = await Menu.findByPk(product_id);
-    if (!product || !product.is_available) {
-      return res.status(404).json({ message: "المنتج غير متاح" });
-    }
-
-    const existingItem = await CartItem.findOne({
-      where: { user_id: userId, menu_id:product_id },
+    const { product_id, quantity } = req.body;
+    const userId = req.user.id;
+// 1. جلب بيانات الوجبة الجديدة مع بيانات المطعم (Vendor)
+    const targetMenu = await Menu.findOne({
+      where: { id: product_id },
+      include: [{ model: Vendor, as: 'vendor' }]
     });
 
-    if (existingItem) {
-      existingItem.quantity += quantity;
-      await existingItem.save();
+    if (!targetMenu) return res.status(404).json({ message: "الوجبة غير موجودة" });
 
-      return res.json({
-        success: true,
-        message: "تم تحديث الكمية",
-        data: existingItem,
+    // 2. التحقق من وجود أي صنف في السلة يتبع مطعماً مختلفاً
+    // نستخدم findOne هنا لأننا نحتاج فقط لمعرفة ما إذا كان هناك "على الأقل" عنصر واحد مخالف
+    const existingItemWithDifferentVendor = await CartItem.findOne({
+      where: { user_id: userId },
+      include: [{
+        model: Menu,
+        as: 'menu',
+        where: {
+          vendor_id: { [Op.ne]: targetMenu.vendor_id } 
+        }
+      }]
+    });
+
+    if (existingItemWithDifferentVendor) {
+      return res.status(400).json({
+        error_code: "MULTIPLE_RESTAURANTS",
+        message: "سلتك تحتوي على وجبات من مطعم آخر. هل ترغب في تفريغ السلة والبدء بطلب جديد من هذا المطعم؟"
       });
     }
 
-    const cartItem = await CartItem.create({
-      user_id: userId,
-      menu_id:product_id,
-      quantity,
+    // 3. إذا كان نفس المطعم أو السلة فارغة، نكمل الإضافة أو التحديث بشكل عادي
+    const [cartItem, created] = await CartItem.findOrCreate({
+      where: { user_id: userId, menu_id: product_id },
+      defaults: { quantity }
     });
 
-    res.status(201).json({
-      success: true,
-      message: "تمت إضافة المنتج للسلة",
-      data: cartItem,
-    });
+    if (!created) {
+      cartItem.quantity += quantity;
+      await cartItem.save();
+    }
+
+    return res.status(200).json({ message: "تمت الإضافة للسلة بنجاح" });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "خطأ في السيرفر" });
+    return res.status(500).json({ message: error.message });
   }
 };
 exports.getCartItems = async (req, res) => {
@@ -629,7 +706,13 @@ exports.getFavorites = async (req, res) => {
       include: [
         {
           model: Menu,
-          as:"menu"
+          as:"menu",
+          include:[
+            {
+              model: Vendor,
+              as:"vendor",
+            }
+          ]
         },
       ],
     });
@@ -742,70 +825,151 @@ exports.checkout = async (req, res) => {
 
   try {
     // 1. جلب عناصر السلة
-    const cartItems = await CartItem.findAll({
-      where: { user_id: userId },
-      include: [{ model: Menu }],
-    });
+   const {order_id,
+        latitude,
+        longitude,
+        delivery_fee,
+        delivery_time,
+        total_price,
+        payment_method
+      } = req.body;
 
-    if (!cartItems.length) {
-      return res.status(400).json({ message: "السلة فارغة" });
+    const order = await Order.findByPk(order_id);
+    if (!order) {
+      return res.status(404).json({ message: "الطلب غير موجود" });
     }
-
-    // 2. التأكد إن كل المنتجات من نفس المطعم
-    const vendorId = cartItems[0].Menu.vendor_id;
-    const invalidVendor = cartItems.some(
-      (item) => item.Menu.vendor_id !== vendorId
-    );
-
-    if (invalidVendor) {
-      return res.status(400).json({
-        message: "لا يمكن الطلب من أكثر من مطعم في نفس الطلب",
-      });
-    }
-
-    // 3. حساب الإجمالي
-    let total = 0;
-    cartItems.forEach((item) => {
-      total += item.Menu.price * item.quantity;
+    await order.update({
+      latitude,
+      longitude,
+      deliveryFee: delivery_fee,
+      deliveryTime: delivery_time,
+      total: total_price, 
     });
-
-    // 4. إنشاء الطلب
-    const order = await Order.create(
-      {
-        user_id: userId,
-        vendor_id: vendorId,
-        total,
-        status: "pending",
-      },
-    );
-
-    // 5. إنشاء عناصر الطلب
-    const orderItems = cartItems.map((item) => ({
+    await Payment.create({
       order_id: order.id,
-      menu_id: item.Menu.id,
-      quantity: item.quantity,
-      price: item.Menu.price,
-    }));
-
-    await OrderItem.bulkCreate(orderItems);
-
-    // 6. تفريغ السلة
-    await CartItem.destroy({
-      where: { user_id: userId },
+      amount: total_price,
+      method: payment_method, // 'cod' حالياً
+      status: 'pending' // لو كاش يبقى معلق لحين الاستلام
     });
-
-
-    res.status(201).json({
-      success: true,
-      message: "تم إنشاء الطلب بنجاح",
-      data: {
-        order_id: order.id,
-        total,
-        items_count: orderItems.length,
-      },
+    res.status(200).json({ 
+      message: "تم تأكيد الطلب بنجاح", 
+      order_id: order.id 
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "خطأ أثناء تنفيذ الطلب" });
+  }
+};
+// vendor_id
+exports.createOrder = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const cartItems = await CartItem.findAll({ 
+      where: { user_id: userId },
+      include: [{model: Menu,
+          as:"menu"}] 
+    });
+
+    if (cartItems.length === 0) return res.status(400).json({ message: "السلة فارغة" });
+
+    // 1. تجميع العناصر حسب المطعم
+    const ordersByRestaurant = cartItems.reduce((acc, item) => {
+      const restId = item.menu.vendor_id;
+      if (!acc[restId]) acc[restId] = [];
+      acc[restId].push(item);
+      return acc;
+    }, {});
+
+    // 2. إنشاء طلب مستقل لكل مطعم
+    const createdOrders = [];
+    for (const restId in ordersByRestaurant) {
+      const items = ordersByRestaurant[restId];
+      const total = items.reduce((sum, i) => sum + (i.menu.price * i.quantity), 0);
+
+      const order = await Order.create({
+        user_id: userId,
+        vendor_id: restId,
+        total: total + (total * 0.05), // إضافة الرسوم لكل طلب
+        status: 'pending',
+        delivery_status: 'pending',
+        serviceFee:(total * 0.05)
+      });
+
+      // إضافة المنتجات للطلب الفرعي
+      await OrderItem.bulkCreate(items.map(i => ({
+        order_id: order.id,
+        menu_id: i.menu_id,
+        quantity: i.quantity,
+        price: i.menu.price
+      })));
+      
+      createdOrders.push(order);
+    }
+
+    // 3. تفريغ السلة
+    await CartItem.destroy({ where: { user_id: userId } });
+
+    res.status(200).json(createdOrders);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getOrderDetails = async (req, res) => {
+  try {
+    const { id } = req.params; // رقم الطلب
+
+    const order = await Order.findOne({
+      where: { id },
+      include: [
+        {
+          model: Vendor,
+          as: 'vendor', // تأكد من مطابقة الـ Alias في العلاقات
+        },
+        {
+          model: OrderItem,
+          as: 'items',
+          include: [
+            {
+              model: Menu,
+              as: 'Menu',
+              attributes: ['id', 'name', 'deliveryTime'] // جلب وقت التحضير لكل وجبة
+            }
+          ]
+        }
+      ]
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "الطلب غير موجود" });
+    }
+    // حساب إجمالي وقت التحضير (أعلى وقت تحضير بين الأصناف المطلوبة)
+    const itemsPreparationTimes = order.items.map(item => item.Menu.deliveryTime || 0);
+    const maxPreparationTime = Math.max(...itemsPreparationTimes, 0);
+
+    return res.status(200).json({
+      orderId: order.id,
+      status: order.status,
+      // بيانات السعر
+      billing: {
+        subtotal: order.total,
+        deliveryFee: order.deliveryFee,
+        serviceFee: order.serviceFee,
+        totalAmount: parseFloat(order.total) + parseFloat(order.deliveryFee) + parseFloat(order.serviceFee)
+      },
+      // بيانات المطعم
+      restaurant: order.vendor,
+      // بيانات الوقت والموقع
+      preparationTime: maxPreparationTime,
+      location: {
+        lat: order.latitude,
+        lng: order.longitude
+      },
+      // قائمة الأصناف
+      items: order.items
+    });
+
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };

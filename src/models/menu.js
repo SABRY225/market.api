@@ -27,12 +27,18 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(255),
         allowNull: true,
       },
-
+     calories: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      deliveryTime: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
       is_available: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
       },
-
       vendor_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

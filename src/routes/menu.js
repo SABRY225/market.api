@@ -17,5 +17,7 @@ router.delete("/items/:id", authToken, menu.deleteMenuItem);
 
 
 router.get('/top', menu.topProductAndOffers);
+router.get('/search', menu.getMenus);
 
+router.get('/:id', menu.getOneMenu);
 module.exports = router;

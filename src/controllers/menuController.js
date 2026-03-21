@@ -564,3 +564,108 @@ const buildProductAttributes = (userId = null) => ([
     'isFavorite'
   ],
 ]);
+
+
+exports.getOneMenu = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const menu = await Menu.findOne({
+      where: { id },
+      attributes: {
+        include: [
+          // حساب متوسط التقييم وعدد المقيمين في نفس الاستعلام
+          [fn('COALESCE', fn('AVG', col('reviews.rating')), 0), 'average_rating'],
+          [fn('COUNT', col('reviews.id')), 'reviews_count']
+        ]
+      },
+      include: [
+        { model: Category, as: 'category', attributes: ['name'] },
+        { 
+          model: Review, 
+          as: 'reviews',
+          include: [{ model: User, as: 'user', attributes: ['name'] }] // لجلب اسم كاتب التقييم
+        }
+      ],
+      group: ['Menu.id', 'category.id', 'reviews.id', 'reviews->user.id'],
+      subQuery: false
+    });
+
+    if (!menu) return res.status(404).json({ message: "الوجبة غير موجودة" });
+
+    return res.status(200).json({ data: menu });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "خطأ في السيرفر" });
+  }
+};
+
+exports.getMenus = async (req, res) => {
+  try {
+    const { categoryName, search } = req.query;
+
+    let menuWhere = {};
+    let categoryWhere = {};
+
+    if (search) {
+      menuWhere.name = { [Op.like]: `%${search}%` };
+      menuWhere.is_available = true;
+    }
+
+    // خريطة التصنيفات (لجعل الكود أنظف)
+    const categoryMap = {
+      fast_food: "وجبات رئيسية",
+      pizza: "بيتزا",
+      burger: "برجر",
+      grill: "مشويات",
+      seafood: "مأكولات بحرية",
+      desserts: "حلويات",
+      coffee: "مشروبات",
+      appetizers: "مقبلات",
+      salads: "سلطات"
+    };
+
+    if (categoryName && categoryMap[categoryName]) {
+      categoryWhere.name = categoryMap[categoryName];
+    }
+
+    const menus = await Menu.findAll({
+      attributes: {
+        include: [
+          // إضافة حقل محسوب (متوسط التقييم)
+          // نفترض وجود علاقة بين Menu و Review وأن اسم الجدول في قاعدة البيانات هو Reviews
+          [
+            fn('COALESCE', fn('AVG', col('reviews.rating')), 0), 
+            'average_rating'
+          ],
+          // إضافة عدد المقيمين (اختياري)
+          [
+            fn('COUNT', col('reviews.id')), 
+            'reviews_count'
+          ]
+        ]
+      },
+      where: menuWhere,
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          where: categoryWhere,
+          attributes: ['id', 'name']
+        },
+        {
+          model: Review, // تأكد من استيراد موديل التقييمات
+          as: 'reviews', // نفس الاسم المعرف في الـ Associate
+          attributes: [] // لا نريد جلب بيانات التقييمات منفردة، نريد الحساب فقط
+        }
+      ],
+      group: ['Menu.id', 'category.id'], // ضروري جداً عند استخدام دالة التجميع AVG
+      order: [['created_at', 'DESC']]
+    });
+
+    return res.status(200).json(menus);
+  } catch (error) {
+    console.error("Error fetching menus:", error);
+    return res.status(500).json({ message: "حدث خطأ في السيرفر" });
+  }
+};

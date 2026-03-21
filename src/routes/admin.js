@@ -32,6 +32,9 @@ router.post('/verify-code',
 // Admin statistics
 router.post('/statistics',preVerifyMiddleware , adminController.statistics);
 router.post('/',body('token').notEmpty(), adminController.getadminInfo);
+router.get('/orders/:userId', adminController.getUserOrders);
+router.get('/delivery/:deliveryId', adminController.getDelivery);
+router.get('/orders-delivery/:deliveryId', adminController.getDeliveryOrders);
 
 // System endpoints
 router.get('/system/general', adminController.systemGeneral);

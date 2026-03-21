@@ -1,12 +1,13 @@
-const { User, Order, Notification, Menu } = require('../models');
+const { User, Order, Notification, Menu, OrderItem, Delivery, Customer, Payment } = require('../models');
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const { sendMail } = require('../utils/mailer');
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 const user = require('../models/user');
 // In-memory store for demo. In production, use DB or cache.
 const codeStore = new Map(); // key: userId, value: { code, expiresAt }
 const bcrypt = require("bcryptjs");
+const { createNotification } = require('../utils/addNotification');
 
 exports.statistics = async (req, res) => {
   try {
@@ -79,7 +80,7 @@ exports.notifications = async (req, res) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findByPk(payload.sub);
     const notifications = await Notification.findAll({
-      where: { userId: user.id },
+      where: { type: "admin" },
       order: [['createdAt', 'DESC']],
       limit: 50,
       include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }]
@@ -301,7 +302,16 @@ exports.createAdmin = async (req, res) => {
       email,
       role: "admin",
     });
-
+    await createNotification({
+      userId: admin.id, 
+      title: "إضافة مسؤول جديد",
+      message: `تم إضافة الأدمن ${name}`,
+      type: "admin",
+      data: {
+        adminId: admin.id,
+        email: admin.email
+      }
+    });
     res.status(201).json({
       message: "Admin created successfully",
       admin: {
@@ -333,12 +343,42 @@ exports.updateAdmin = async (req, res) => {
 
     if (name) admin.name = name;
     if (email) admin.email = email;
+    // 🧠 حفظ القيم القديمة
+    const oldName = admin.name;
+    const oldEmail = admin.email;
 
+    // تحديث البيانات
+    if (name) admin.name = name;
+    if (email) admin.email = email;
     await admin.save();
+    // 🔔 تجهيز وصف التعديلات
+    let changes = [];
+    if (name && name !== oldName) {
+      changes.push(`الاسم: ${oldName} → ${name}`);
+    }
+    if (email && email !== oldEmail) {
+      changes.push(`الإيميل: ${oldEmail} → ${email}`);
+    }
 
+    // 🔔 إنشاء تنبيه
+    await createNotification({
+      userId: admin.id, // أو سوبر أدمن
+      title: "تعديل بيانات مسؤول",
+      message: changes.length
+        ? `تم تعديل بيانات الأدمن (${changes.join(" , ")})`
+        : `تم تحديث بيانات الأدمن بدون تغييرات واضحة`,
+      type: "admin",
+      data: {
+        adminId: admin.id,
+        oldName,
+        oldEmail,
+        newName: admin.name,
+        newEmail: admin.email
+      }
+    });
     res.json({ message: "Admin updated successfully" });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error",error:err.message });
   }
 };
 
@@ -356,10 +396,121 @@ exports.deleteAdmin = async (req, res) => {
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
     }
-
     await admin.destroy();
     res.json({ message: "Admin deleted successfully" });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error",error:err.message });
+  }
+};
+
+
+exports.getUserOrders = async (req, res) => {
+  try {
+    // 1. تحديد المعرف (إما من البارامتر أو من التوكن)
+    const userId = req.params.userId;
+    
+    
+    // 3. بناء شرط البحث
+    const whereCondition = { user_id: userId };
+
+    // 4. جلب الطلبات مع المنتجات التابعة لها
+    const orders = await Order.findAll({
+      where: whereCondition,
+      include: [
+        {
+          model: OrderItem, 
+          as: 'items',
+          include: [
+            {
+              model: Menu,
+              as: 'Menu',
+              attributes: ['id', 'name', 'deliveryTime'] // جلب وقت التحضير لكل وجبة
+            }
+          ]
+        }
+      ],
+      order: [['createdAt', 'DESC']] // جلب الأحدث أولاً
+    });
+
+    return res.status(200).json(orders);
+
+  } catch (error) {
+    return res.status(500).json({ message: "حدث خطأ أثناء جلب الطلبات: " + error.message });
+  }
+};
+exports.getDelivery = async (req, res) => {
+  try {
+    const deliver = await Delivery.findOne({where:{user_id:req.params.deliveryId}});
+    if (!deliver) return res.status(404).json({ message: "Not found" });
+    return res.json(deliver);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.getDeliveryOrders = async (req, res) => {
+  try {
+    const deliver = await Delivery.findOne({where:{user_id:req.params.deliveryId}});
+    const orders = await Order.findAll({
+      where: {
+        delivery_id: deliver.id,
+      },
+      order: [["created_at", "DESC"]],
+      include: [
+        {
+          model: User,
+          as: "user",
+          include: [{ model: Customer, as: "customer" }],
+        },
+        {
+          model: Payment,
+          as: "payment",
+        },
+        {
+          model: OrderItem,
+          as: "items",
+          include: {
+            model: Menu,
+            as: "Menu",
+          },
+        },
+      ],
+    });
+
+    // 2. التحقق من وجود طلبات لتجنب خطأ Map على Null
+    if (!orders || orders.length === 0) {
+      return res.json([]);
+    }
+
+    // 3. تحويل البيانات للشكل المطلوب في الـ Front-end
+    const formattedOrders = orders.map((order) => {
+      return {
+        id: `${order.id}`,
+        customer: order.user?.name,
+        phone: order.user?.Customer?.phone,
+        status: order.status,
+        startTime: new Date(order.createdAt).toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }),
+        location: [order.longitude, order.latitude],
+        items: order.items.map((item) => ({
+          name: item.Menu.name,
+          price: parseFloat(item.price).toFixed(3),
+        })),
+        total: order.total,
+        payment: order.payment.method,
+        showMap: false,
+      };
+    });
+
+    return res.json(formattedOrders);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };

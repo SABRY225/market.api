@@ -19,17 +19,20 @@ const Favorite = require('./favorite')(sequelize, DataTypes);
 const VendorWithdrawal = require('./vendor_withdrawal')(sequelize, DataTypes);
 const Notification = require('./notification')(sequelize, DataTypes);
 const OrderItem = require('./OrderItem')(sequelize, DataTypes);
+const OrderRequest = require('./orderRequest')(sequelize, DataTypes);
 
 // Associations (add here later if needed)
 
 // Notification <> User
-Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' ,onDelete: "CASCADE"});
 User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
 
 // Order <> User
 Order.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(Order, { foreignKey: 'user_id', as: 'orders' });
 
+Order.belongsTo(Vendor, { foreignKey: 'vendor_id', as: 'vendor' });
+Vendor.hasMany(Order, { foreignKey: 'vendor_id', as: 'orders' });
 // Order <> Delivery
 Order.belongsTo(Delivery, { foreignKey: 'delivery_id', as: 'delivery' });
 Delivery.hasMany(Order, { foreignKey: 'delivery_id', as: 'deliver_orders' });
@@ -53,6 +56,14 @@ Menu.hasMany(OrderItem, { foreignKey: 'menu_id', as: 'orderItems' });
 OrderItem.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Order.hasMany(OrderItem, { foreignKey: 'order_id', as: 'items' });
 
+Order.hasOne(Payment, { as: "payment", foreignKey: "order_id" });
+Payment.belongsTo(Order, { foreignKey: "order_id" });
+
+OrderRequest.belongsTo(Order, {
+    foreignKey: "order_id",
+    as: "order"
+});
+
 User.hasOne(Vendor, { foreignKey: 'user_id', as: 'vendor', onDelete: 'CASCADE'});
 Vendor.belongsTo(User, { foreignKey: 'user_id', as: 'user'});
 
@@ -69,10 +80,12 @@ Vendor.hasMany(Menu, {foreignKey: "vendor_id",as: "menus"});
 Menu.belongsTo(Vendor, { foreignKey: "vendor_id", as: "vendor" });
 
 Review.belongsTo(User, { foreignKey: "user_id", as: "user"});
-Review.belongsTo(Menu, { foreignKey: "menu_id",as: "menu"});
 
-User.hasOne(Customer, { foreignKey: 'user_id' });
-Customer.belongsTo(User, { foreignKey: 'user_id' });
+Menu.hasMany(Review, { foreignKey: 'menu_id', as: 'reviews' });
+Review.belongsTo(Menu, { foreignKey: 'menu_id', as: 'menu' });
+
+User.hasOne(Customer, { foreignKey: 'user_id', as: 'customer', onDelete: 'CASCADE' });
+Customer.belongsTo(User, { foreignKey: 'user_id' ,as: 'user' });
 
 // User ↔ CartItem
 User.hasMany(CartItem, {foreignKey: "user_id",as: "user",onDelete: "CASCADE",});
@@ -108,6 +121,7 @@ module.exports = {
   Payment,
   Coupon,
   Category,
+  OrderRequest,
   Menu,
   Dispute,
   Review,
