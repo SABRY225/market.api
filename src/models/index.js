@@ -20,6 +20,7 @@ const VendorWithdrawal = require('./vendor_withdrawal')(sequelize, DataTypes);
 const Notification = require('./notification')(sequelize, DataTypes);
 const OrderItem = require('./OrderItem')(sequelize, DataTypes);
 const OrderRequest = require('./orderRequest')(sequelize, DataTypes);
+const ChatMessage = require('./ChatMessage')(sequelize, DataTypes);
 
 // Associations (add here later if needed)
 
@@ -101,6 +102,9 @@ Favorite.belongsTo(User, { foreignKey: "user_id",as: "user" });
 Menu.hasMany(Favorite, { foreignKey: "menu_id",as:"menu", onDelete: "CASCADE" });
 Favorite.belongsTo(Menu, { foreignKey: "menu_id",as:"menu" });
 
+ChatMessage.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Order.hasMany(ChatMessage, { foreignKey: 'order_id', as: 'messages' });
+
 const syncDatabase = async (force = true, alter = false) => {
   try {
     await sequelize.sync({ force, alter });
@@ -121,6 +125,7 @@ module.exports = {
   Payment,
   Coupon,
   Category,
+  ChatMessage,
   OrderRequest,
   Menu,
   Dispute,

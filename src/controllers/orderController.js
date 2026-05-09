@@ -2,10 +2,39 @@ const { Order, OrderItem, Payment, Menu, Customer, User, Delivery, OrderRequest 
 
 exports.all = async (req, res) => {
   try {
-    const orders = await Order.findAll({ order: [["created_at", "DESC"]] });
-    return res.json(orders);
+    const orders = await Order.findAll({
+      // 1. اختيار الحقول المطلوبة فقط وتغيير أسمائها
+      attributes: [
+        'id',
+        'total', // نفترض أن الحقل في الداتابيز هو total_price
+        ['created_at', 'date'],   // نفترض أن الحقل في الداتابيز هو created_at
+        'status'
+      ],
+      // 2. دمج جدول المستخدم لجلب اسم العميل
+      include: [
+        {
+          model: User,
+          as: 'user', // يجب أن يطابق الـ 'as' الموجود في التعريف belongsTo
+          attributes: ['name'] // نأخذ الاسم فقط
+        }
+      ],
+      order: [["created_at", "DESC"]]
+    });
+
+    // 3. تحويل البيانات لشكل Flat (مسطح) لتطابق طلبك تماماً
+    const formattedOrders = orders.map(order => {
+      return {
+        id: order.id,
+        customer: order.user ? order.user.name : "عميل مجهول",
+        total: order.get('total'), // نستخدم get لجلب الـ Alias
+        date: order.get('date'),
+        status: order.status
+      };
+    });
+
+    return res.json(formattedOrders);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching orders:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };

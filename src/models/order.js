@@ -13,13 +13,13 @@ module.exports = (sequelize, DataTypes) => {
       },
       status: {
         type: DataTypes.ENUM(
-          "pending",
-          "confirmed",
-          "processing",
-          "searching",
-          "shipped",
-          "delivered",
-          "cancelled",
+          "pending", // حالة المبدئية
+          "confirmed", // الموافقه عليه من قبل المطعم
+          "processing", // جاري العمل عليها من قبل المطعم
+          "searching", // البحث عن ديليفري
+          "shipped", // التحرك بالطلب
+          "delivered", // تم الاستلام
+          "cancelled", // ملغي
         ),
         allowNull: false,
         defaultValue: "pending",
