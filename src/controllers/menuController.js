@@ -27,7 +27,6 @@ async function uploadBufferToBunny(buffer, filename, mime = 'image/jpeg') {
   }
 }
 
-// دالة مساعدة لتوليد اسم ملف فريد
 function generateFileName(file) {
   const mimeType = file.mimetype || 'image/jpeg';
   const ext = (mimeType.split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi, '');

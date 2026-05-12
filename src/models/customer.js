@@ -27,7 +27,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING(100),
       allowNull: true,
     },
-
+    InvitationLink: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
     wallet_balance: {
       type: DataTypes.DECIMAL(10, 2),
       defaultValue: 0,

@@ -43,6 +43,7 @@ app.use("/api/v1/tickets", require("./routes/sellerTickets"));
 app.use("/api/v1/reports", require("./routes/sellerReports"));
 app.use("/api/v1/menu", require("./routes/menu"));
 app.use('/api/v1/chats', require('./routes/chat'));
+app.use('/api/v1/advertisements', require('./routes/advertisement.routes'));
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 

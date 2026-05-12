@@ -21,6 +21,7 @@ const Notification = require('./notification')(sequelize, DataTypes);
 const OrderItem = require('./OrderItem')(sequelize, DataTypes);
 const OrderRequest = require('./orderRequest')(sequelize, DataTypes);
 const ChatMessage = require('./ChatMessage')(sequelize, DataTypes);
+const Advertisement = require('./advertisement')(sequelize, DataTypes);
 
 // Associations (add here later if needed)
 
@@ -137,4 +138,5 @@ module.exports = {
   VendorWithdrawal,
   OrderItem,
   Notification,
+  Advertisement
 };
