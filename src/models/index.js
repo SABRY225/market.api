@@ -22,7 +22,12 @@ const OrderItem = require('./OrderItem')(sequelize, DataTypes);
 const OrderRequest = require('./orderRequest')(sequelize, DataTypes);
 const ChatMessage = require('./ChatMessage')(sequelize, DataTypes);
 const Advertisement = require('./advertisement')(sequelize, DataTypes);
-
+const ProductMart = require('./mart/productMart')(sequelize, DataTypes);
+const OrderMart = require('./mart/ordersMart')(sequelize, DataTypes);
+const OrderItemMart = require('./mart/OrderItemMart')(sequelize, DataTypes);
+const Reward = require('./rewards/reward')(sequelize, DataTypes);
+const InvitationSystem = require('./invitation_system')(sequelize, DataTypes);
+const DeliverSystem = require('./delivery_system')(sequelize, DataTypes);
 // Associations (add here later if needed)
 
 // Notification <> User
@@ -133,10 +138,16 @@ module.exports = {
   Review,
   SupportTicket,
   CartItem,
+  DeliverSystem,
   Favorite,
   Customer,
   VendorWithdrawal,
   OrderItem,
+  InvitationSystem,
+  Reward,
   Notification,
-  Advertisement
+  Advertisement,
+  OrderItemMart,
+  ProductMart,
+  OrderMart
 };

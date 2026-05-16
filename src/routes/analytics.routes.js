@@ -1,5 +1,5 @@
 const express = require('express');
-const controller = require('../controllers/analyticsController');
+const controller = require('../controllers/analytics.controller');
 const preVerifyMiddleware = require('../middleware/preVerifyMiddleware');
 const router = express.Router();
 

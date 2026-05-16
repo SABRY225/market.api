@@ -1,6 +1,6 @@
 const express = require('express');
-const controller = require('../controllers/clientController');
-const { fetchOffers, fetchProducts, fetchOfferDetails, fetchProductDetails } = require('../controllers/menuController');
+const controller = require('../controllers/client.controller');
+const { fetchOffers, fetchProducts, fetchOfferDetails, fetchProductDetails } = require('../controllers/menu.controller');
 const authToken = require('../middleware/authToken');
 const router = express.Router();
 

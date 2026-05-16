@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 
 const upload = multer({ storage: multer.memoryStorage() });
-const menu = require("../controllers/menuController");
+const menu = require("../controllers/menu.controller");
 const authToken = require("../middleware/authToken");
 
 router.get("/categories", authToken, menu.getCategories);

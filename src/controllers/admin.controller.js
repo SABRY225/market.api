@@ -4,8 +4,7 @@ const jwt = require('jsonwebtoken');
 const { sendMail } = require('../utils/mailer');
 const { Op, where } = require('sequelize');
 const user = require('../models/user');
-// In-memory store for demo. In production, use DB or cache.
-const codeStore = new Map(); // key: userId, value: { code, expiresAt }
+const codeStore = new Map();
 const bcrypt = require("bcryptjs");
 const { createNotification } = require('../utils/addNotification');
 

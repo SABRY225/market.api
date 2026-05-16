@@ -1,5 +1,5 @@
 const express = require('express');
-const controller = require('../controllers/userController');
+const controller = require('../controllers/user.controller');
 const preVerifyMiddleware = require('../middleware/preVerifyMiddleware');
 const router = express.Router();
 
